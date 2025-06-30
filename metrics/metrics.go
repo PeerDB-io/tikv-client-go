@@ -46,7 +46,6 @@ var (
 	TiKVSendReqHistogram                           *prometheus.HistogramVec
 	TiKVSendReqSummary                             *prometheus.SummaryVec
 	TiKVRPCNetLatencyHistogram                     *prometheus.HistogramVec
-	TiKVCoprocessorHistogram                       *prometheus.HistogramVec
 	TiKVLockResolverCounter                        *prometheus.CounterVec
 	TiKVRegionErrorCounter                         *prometheus.CounterVec
 	TiKVRPCErrorCounter                            *prometheus.CounterVec
@@ -118,6 +117,9 @@ var (
 	TiKVLowResolutionTSOUpdateIntervalSecondsGauge prometheus.Gauge
 	TiKVStaleRegionFromPDCounter                   prometheus.Counter
 	TiKVPipelinedFlushThrottleSecondsHistogram     prometheus.Histogram
+	TiKVTxnWriteConflictCounter                    prometheus.Counter
+	TiKVAsyncSendReqCounter                        *prometheus.CounterVec
+	TiKVAsyncBatchGetCounter                       *prometheus.CounterVec
 )
 
 // Label constants.
@@ -172,7 +174,7 @@ func initMetrics(namespace, subsystem string, constLabels prometheus.Labels) {
 			Subsystem:   subsystem,
 			Name:        "request_seconds",
 			Help:        "Bucketed histogram of sending request duration.",
-			Buckets:     prometheus.ExponentialBuckets(0.0005, 2, 29), // 0.5ms ~ 1.5days
+			Buckets:     prometheus.ExponentialBuckets(0.0005, 2, 24), // 0.5ms ~ 1.2h
 			ConstLabels: constLabels,
 		}, []string{LblType, LblStore, LblStaleRead, LblScope})
 
@@ -191,19 +193,9 @@ func initMetrics(namespace, subsystem string, constLabels prometheus.Labels) {
 			Subsystem:   subsystem,
 			Name:        "rpc_net_latency_seconds",
 			Help:        "Bucketed histogram of time difference between TiDB and TiKV.",
-			Buckets:     prometheus.ExponentialBuckets(5e-5, 2, 22), // 50us ~ 105s
+			Buckets:     prometheus.ExponentialBuckets(0.0001, 2, 20), // 0.1ms ~ 52s
 			ConstLabels: constLabels,
 		}, []string{LblStore, LblScope})
-
-	TiKVCoprocessorHistogram = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Namespace:   namespace,
-			Subsystem:   subsystem,
-			Name:        "cop_duration_seconds",
-			Help:        "Run duration of a single coprocessor task, includes backoff time.",
-			Buckets:     prometheus.ExponentialBuckets(0.0005, 2, 29), // 0.5ms ~ 1.5days
-			ConstLabels: constLabels,
-		}, []string{LblStore, LblStaleRead, LblScope})
 
 	TiKVLockResolverCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -528,16 +520,6 @@ func initMetrics(namespace, subsystem string, constLabels prometheus.Labels) {
 			Buckets:     prometheus.ExponentialBuckets(1, 2, 20), // 1s ~ 524288s
 		})
 
-	TiKVPessimisticLockKeysDuration = prometheus.NewHistogram(
-		prometheus.HistogramOpts{
-			Namespace:   namespace,
-			Subsystem:   subsystem,
-			Name:        "pessimistic_lock_keys_duration",
-			Buckets:     prometheus.ExponentialBuckets(0.001, 2, 24), // 1ms ~ 8389s
-			Help:        "tidb txn pessimistic lock keys duration",
-			ConstLabels: constLabels,
-		})
-
 	TiKVTTLLifeTimeReachCounter = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Namespace:   namespace,
@@ -779,85 +761,122 @@ func initMetrics(namespace, subsystem string, constLabels prometheus.Labels) {
 
 	TiKVStaleReadCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "stale_read_counter",
-			Help:      "Counter of stale read hit/miss",
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "stale_read_counter",
+			Help:        "Counter of stale read hit/miss",
+			ConstLabels: constLabels,
 		}, []string{LblResult})
 
 	TiKVStaleReadReqCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "stale_read_req_counter",
-			Help:      "Counter of stale read requests",
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "stale_read_req_counter",
+			Help:        "Counter of stale read requests",
+			ConstLabels: constLabels,
 		}, []string{LblType})
 
 	TiKVStaleReadBytes = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "stale_read_bytes",
-			Help:      "Counter of stale read requests bytes",
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "stale_read_bytes",
+			Help:        "Counter of stale read requests bytes",
+			ConstLabels: constLabels,
 		}, []string{LblResult, LblDirection})
 
 	TiKVPipelinedFlushLenHistogram = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "pipelined_flush_len",
-			Help:      "Bucketed histogram of length of pipelined flushed memdb",
-			Buckets:   prometheus.ExponentialBuckets(1000, 2, 16), // 1K ~ 32M
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "pipelined_flush_len",
+			Help:        "Bucketed histogram of length of pipelined flushed memdb",
+			ConstLabels: constLabels,
+			Buckets:     prometheus.ExponentialBuckets(1000, 2, 16), // 1K ~ 32M
 		})
 
 	TiKVPipelinedFlushSizeHistogram = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "pipelined_flush_size",
-			Help:      "Bucketed histogram of size of pipelined flushed memdb",
-			Buckets:   prometheus.ExponentialBuckets(16*1024*1024, 1.2, 13), // 16M ~ 142M
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "pipelined_flush_size",
+			Help:        "Bucketed histogram of size of pipelined flushed memdb",
+			ConstLabels: constLabels,
+			Buckets:     prometheus.ExponentialBuckets(16*1024*1024, 1.2, 13), // 16M ~ 142M
 		})
 
 	TiKVPipelinedFlushDuration = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "pipelined_flush_duration",
-			Help:      "Flush time of pipelined memdb.",
-			Buckets:   prometheus.ExponentialBuckets(0.0005, 2, 28), // 0.5ms ~ 18h
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "pipelined_flush_duration",
+			Help:        "Flush time of pipelined memdb.",
+			ConstLabels: constLabels,
+			Buckets:     prometheus.ExponentialBuckets(0.0005, 2, 28), // 0.5ms ~ 18h
 		})
 
 	TiKVValidateReadTSFromPDCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "validate_read_ts_from_pd_count",
-			Help:      "Counter of validating read ts by getting a timestamp from PD",
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "validate_read_ts_from_pd_count",
+			Help:        "Counter of validating read ts by getting a timestamp from PD",
+			ConstLabels: constLabels,
 		})
 
 	TiKVLowResolutionTSOUpdateIntervalSecondsGauge = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "low_resolution_tso_update_interval_seconds",
-			Help:      "The actual working update interval for the low resolution TSO. As there are adaptive mechanism internally, this value may differ from the config.",
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "low_resolution_tso_update_interval_seconds",
+			Help:        "The actual working update interval for the low resolution TSO. As there are adaptive mechanism internally, this value may differ from the config.",
+			ConstLabels: constLabels,
 		})
 	TiKVStaleRegionFromPDCounter = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "stale_region_from_pd",
-			Help:      "Counter of stale region from PD",
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "stale_region_from_pd",
+			Help:        "Counter of stale region from PD",
+			ConstLabels: constLabels,
 		})
 	TiKVPipelinedFlushThrottleSecondsHistogram = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "pipelined_flush_throttle_seconds",
-			Help:      "Throttle durations of pipelined flushes.",
-			Buckets:   prometheus.ExponentialBuckets(0.0005, 2, 28), // 0.5ms ~ 18h
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "pipelined_flush_throttle_seconds",
+			Help:        "Throttle durations of pipelined flushes.",
+			ConstLabels: constLabels,
+			Buckets:     prometheus.ExponentialBuckets(0.0005, 2, 28), // 0.5ms ~ 18h
 		})
+
+	TiKVTxnWriteConflictCounter = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "txn_write_conflict_counter",
+			Help:        "Counter of txn write conflict",
+			ConstLabels: constLabels,
+		})
+
+	TiKVAsyncSendReqCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "async_send_req_total",
+			Help:        "Counter of async send req by region request sender.",
+			ConstLabels: constLabels,
+		}, []string{LblResult})
+
+	TiKVAsyncBatchGetCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace:   namespace,
+			Subsystem:   subsystem,
+			Name:        "async_batch_get_total",
+			Help:        "Counter of async batch get by txn snapshot.",
+			ConstLabels: constLabels,
+		}, []string{LblResult})
 
 	initShortcuts()
 }
@@ -884,7 +903,6 @@ func RegisterMetrics() {
 	prometheus.MustRegister(TiKVSendReqHistogram)
 	prometheus.MustRegister(TiKVSendReqSummary)
 	prometheus.MustRegister(TiKVRPCNetLatencyHistogram)
-	prometheus.MustRegister(TiKVCoprocessorHistogram)
 	prometheus.MustRegister(TiKVLockResolverCounter)
 	prometheus.MustRegister(TiKVRegionErrorCounter)
 	prometheus.MustRegister(TiKVRPCErrorCounter)
@@ -919,7 +937,6 @@ func RegisterMetrics() {
 	prometheus.MustRegister(TiKVTokenWaitDuration)
 	prometheus.MustRegister(TiKVTxnHeartBeatHistogram)
 	prometheus.MustRegister(TiKVTTLManagerHistogram)
-	prometheus.MustRegister(TiKVPessimisticLockKeysDuration)
 	prometheus.MustRegister(TiKVTTLLifeTimeReachCounter)
 	prometheus.MustRegister(TiKVNoAvailableConnectionCounter)
 	prometheus.MustRegister(TiKVTwoPCTxnCounter)
@@ -956,6 +973,9 @@ func RegisterMetrics() {
 	prometheus.MustRegister(TiKVLowResolutionTSOUpdateIntervalSecondsGauge)
 	prometheus.MustRegister(TiKVStaleRegionFromPDCounter)
 	prometheus.MustRegister(TiKVPipelinedFlushThrottleSecondsHistogram)
+	prometheus.MustRegister(TiKVTxnWriteConflictCounter)
+	prometheus.MustRegister(TiKVAsyncSendReqCounter)
+	prometheus.MustRegister(TiKVAsyncBatchGetCounter)
 }
 
 // readCounter reads the value of a prometheus.Counter.

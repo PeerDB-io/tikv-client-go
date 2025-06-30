@@ -310,6 +310,20 @@ func TestReplicaReadAccessPathByCase(t *testing.T) {
 	s.SetupTest(t)
 	defer s.TearDownTest()
 
+	testReplicaReadAccessPathByCase(s)
+}
+
+func TestReplicaReadAccessPathByCaseUsingAsyncAPI(t *testing.T) {
+	s := new(testReplicaSelectorSuite)
+	s.SetupTest(t)
+	defer s.TearDownTest()
+
+	failpoint.Enable("tikvclient/useSendReqAsync", `return(true)`)
+	defer failpoint.Disable("tikvclient/useSendReqAsync")
+	testReplicaReadAccessPathByCase(s)
+}
+
+func testReplicaReadAccessPathByCase(s *testReplicaSelectorSuite) {
 	fakeEpochNotMatch := &errorpb.Error{EpochNotMatch: &errorpb.EpochNotMatch{}} // fake region error, cause by no replica is available.
 	ca := replicaSelectorAccessPathCase{
 		reqType:   tikvrpc.CmdGet,
@@ -735,6 +749,20 @@ func TestReplicaReadAccessPathByCase2(t *testing.T) {
 	s.SetupTest(t)
 	defer s.TearDownTest()
 
+	testReplicaReadAccessPathByCase2(s)
+}
+
+func TestReplicaReadAccessPathByCase2UsingAsyncAPI(t *testing.T) {
+	s := new(testReplicaSelectorSuite)
+	s.SetupTest(t)
+	defer s.TearDownTest()
+
+	failpoint.Enable("tikvclient/useSendReqAsync", `return(true)`)
+	defer failpoint.Disable("tikvclient/useSendReqAsync")
+	testReplicaReadAccessPathByCase2(s)
+}
+
+func testReplicaReadAccessPathByCase2(s *testReplicaSelectorSuite) {
 	fakeEpochNotMatch := &errorpb.Error{EpochNotMatch: &errorpb.EpochNotMatch{}}
 	// Following cases are found by other test, careful.
 	ca := replicaSelectorAccessPathCase{
@@ -833,7 +861,7 @@ func TestReplicaReadAccessPathByCase2(t *testing.T) {
 		expect: &accessPathResult{
 			accessPath: []string{
 				"{addr: store2, replica-read: true, stale-read: false}",
-				"{addr: store1, replica-read: true, stale-read: false}"},
+				"{addr: store1, replica-read: false, stale-read: false}"},
 			respErr:         "",
 			respRegionError: nil,
 			backoffCnt:      0,
@@ -1000,6 +1028,20 @@ func TestReplicaReadAccessPathByBasicCase(t *testing.T) {
 	s.SetupTest(t)
 	defer s.TearDownTest()
 
+	testReplicaReadAccessPathByBasicCase(s)
+}
+
+func TestReplicaReadAccessPathByBasicCaseUsingAsyncAPI(t *testing.T) {
+	s := new(testReplicaSelectorSuite)
+	s.SetupTest(t)
+	defer s.TearDownTest()
+
+	failpoint.Enable("tikvclient/useSendReqAsync", `return(true)`)
+	defer failpoint.Disable("tikvclient/useSendReqAsync")
+	testReplicaReadAccessPathByBasicCase(s)
+}
+
+func testReplicaReadAccessPathByBasicCase(s *testReplicaSelectorSuite) {
 	retryableErrors := []RegionErrorType{ServerIsBusyErr, ServerIsBusyWithEstimatedWaitMsErr, StaleCommandErr, MaxTimestampNotSyncedErr, ProposalInMergingModeErr, ReadIndexNotReadyErr, RegionNotInitializedErr, DiskFullErr}
 	noRetryErrors := []RegionErrorType{RegionNotFoundErr, KeyNotInRegionErr, EpochNotMatchErr, StoreNotMatchErr, RaftEntryTooLargeErr, RecoveryInProgressErr, FlashbackNotPreparedErr, IsWitnessErr, MismatchPeerIdErr, BucketVersionNotMatchErr}
 	for _, reqType := range []tikvrpc.CmdType{tikvrpc.CmdGet, tikvrpc.CmdPrewrite} {
@@ -1144,6 +1186,20 @@ func TestReplicaReadAccessPathByLeaderCase(t *testing.T) {
 	s.SetupTest(t)
 	defer s.TearDownTest()
 
+	testReplicaReadAccessPathByLeaderCase(s)
+}
+
+func TestReplicaReadAccessPathByLeaderCaseUsingAsyncAPI(t *testing.T) {
+	s := new(testReplicaSelectorSuite)
+	s.SetupTest(t)
+	defer s.TearDownTest()
+
+	failpoint.Enable("tikvclient/useSendReqAsync", `return(true)`)
+	defer failpoint.Disable("tikvclient/useSendReqAsync")
+	testReplicaReadAccessPathByLeaderCase(s)
+}
+
+func testReplicaReadAccessPathByLeaderCase(s *testReplicaSelectorSuite) {
 	fakeEpochNotMatch := &errorpb.Error{EpochNotMatch: &errorpb.EpochNotMatch{}} // fake region error, cause by no replica is available.
 	ca := replicaSelectorAccessPathCase{
 		reqType:   tikvrpc.CmdGet,
@@ -1462,6 +1518,20 @@ func TestReplicaReadAccessPathByFollowerCase(t *testing.T) {
 	s.SetupTest(t)
 	defer s.TearDownTest()
 
+	testReplicaReadAccessPathByFollowerCase(s)
+}
+
+func TestReplicaReadAccessPathByFollowerCaseUsingAsyncAPI(t *testing.T) {
+	s := new(testReplicaSelectorSuite)
+	s.SetupTest(t)
+	defer s.TearDownTest()
+
+	failpoint.Enable("tikvclient/useSendReqAsync", `return(true)`)
+	defer failpoint.Disable("tikvclient/useSendReqAsync")
+	testReplicaReadAccessPathByFollowerCase(s)
+}
+
+func testReplicaReadAccessPathByFollowerCase(s *testReplicaSelectorSuite) {
 	fakeEpochNotMatch := &errorpb.Error{EpochNotMatch: &errorpb.EpochNotMatch{}}
 	ca := replicaSelectorAccessPathCase{
 		reqType:   tikvrpc.CmdGet,
@@ -1563,6 +1633,20 @@ func TestReplicaReadAccessPathByMixedAndPreferLeaderCase(t *testing.T) {
 	s.SetupTest(t)
 	defer s.TearDownTest()
 
+	testReplicaReadAccessPathByMixedAndPreferLeaderCase(s)
+}
+
+func TestReplicaReadAccessPathByMixedAndPreferLeaderCaseUsingAsyncAPI(t *testing.T) {
+	s := new(testReplicaSelectorSuite)
+	s.SetupTest(t)
+	defer s.TearDownTest()
+
+	failpoint.Enable("tikvclient/useSendReqAsync", `return(true)`)
+	defer failpoint.Disable("tikvclient/useSendReqAsync")
+	testReplicaReadAccessPathByMixedAndPreferLeaderCase(s)
+}
+
+func testReplicaReadAccessPathByMixedAndPreferLeaderCase(s *testReplicaSelectorSuite) {
 	fakeEpochNotMatch := &errorpb.Error{EpochNotMatch: &errorpb.EpochNotMatch{}}
 	var ca replicaSelectorAccessPathCase
 	// since leader in store1, so ReplicaReadMixed and ReplicaReadPreferLeader will have the same access path.
@@ -2780,18 +2864,36 @@ func (ca *replicaSelectorAccessPathCase) run(s *testReplicaSelectorSuite) *Regio
 				s.NotNil(rc)
 				regionErr, err := ca.genAccessErr(s.cache, rc, ca.accessErr[idx])
 				if regionErr != nil {
-					return &tikvrpc.Response{Resp: &kvrpcpb.GetResponse{
-						RegionError: regionErr,
-					}}, nil
+					switch req.Type {
+					case tikvrpc.CmdGet:
+						return &tikvrpc.Response{Resp: &kvrpcpb.GetResponse{
+							RegionError: regionErr,
+						}}, nil
+					case tikvrpc.CmdPrewrite:
+						return &tikvrpc.Response{Resp: &kvrpcpb.PrewriteResponse{
+							RegionError: regionErr,
+						}}, nil
+					default:
+						s.FailNow("unsupported reqType " + req.Type.String())
+						return nil, fmt.Errorf("unsupported reqType %v", req.Type)
+					}
 				}
 				if err != nil {
 					return nil, err
 				}
 			}
 		}
-		return &tikvrpc.Response{Resp: &kvrpcpb.GetResponse{
-			Value: []byte("hello world"),
-		}}, nil
+		switch req.Type {
+		case tikvrpc.CmdGet:
+			return &tikvrpc.Response{Resp: &kvrpcpb.GetResponse{
+				Value: []byte("hello world"),
+			}}, nil
+		case tikvrpc.CmdPrewrite:
+			return &tikvrpc.Response{Resp: &kvrpcpb.PrewriteResponse{}}, nil
+		default:
+			s.FailNow("unsupported reqType " + req.Type.String())
+			return nil, fmt.Errorf("unsupported reqType %v", req.Type)
+		}
 	}}
 	sender := NewRegionRequestSender(s.cache, fnClient, oracle.NoopReadTSValidator{})
 	req, opts, timeout := ca.buildRequest(s)
@@ -3225,7 +3327,7 @@ func TestTiKVClientReadTimeout(t *testing.T) {
 	s.Nil(err)
 	s.NotNil(resp)
 	regionErr, _ := resp.GetRegionError()
-	s.True(IsFakeRegionError(regionErr))
+	s.True(retry.IsFakeRegionError(regionErr))
 	s.Equal(0, bo.GetTotalBackoffTimes())
 	s.Equal([]string{
 		"store1", "{addr: store1, replica-read: false, stale-read: false, timeout: 1}",

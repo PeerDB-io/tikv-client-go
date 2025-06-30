@@ -60,8 +60,9 @@ import (
 )
 
 var (
-	withTiKV = flag.Bool("with-tikv", false, "run tests with TiKV cluster started. (not use the mock server)")
-	pdAddrs  = flag.String("pd-addrs", "http://127.0.0.1:2379", "pd addrs")
+	withTiKV     = flag.Bool("with-tikv", false, "run tests with TiKV cluster started. (not use the mock server)")
+	keyspaceName = flag.String("keyspace-name", "", "keyspace name")
+	pdAddrs      = flag.String("pd-addrs", "http://127.0.0.1:2379", "pd addrs")
 )
 
 // NewTestStore creates a KVStore for testing purpose.
@@ -91,7 +92,7 @@ func NewTestUniStore(t *testing.T) *tikv.KVStore {
 	if *withTiKV {
 		return newTiKVStore(t)
 	}
-	client, pdClient, cluster, err := unistore.New("", nil)
+	client, pdClient, cluster, err := unistore.New("", nil, nil)
 	require.Nil(t, err)
 	unistore.BootstrapWithSingleStore(cluster)
 	store, err := tikv.NewTestTiKVStore(&unistoreClientWrapper{client}, pdClient, nil, nil, 0)
@@ -110,7 +111,8 @@ func newTiKVStore(t *testing.T) *tikv.KVStore {
 		pdClient = tikv.NewCodecPDClient(tikv.ModeTxn, pdClient)
 		opt = tikv.WithCodec(tikv.NewCodecV1(tikv.ModeTxn))
 	case kvrpcpb.APIVersion_V2:
-		codecCli, err := tikv.NewCodecPDClientWithKeyspace(tikv.ModeTxn, pdClient, tikv.DefaultKeyspaceName)
+		// The default keyspace cannot be used in API v2 :(. Must specify a valid keyspace
+		codecCli, err := tikv.NewCodecPDClientWithKeyspace(tikv.ModeTxn, pdClient, *keyspaceName)
 		pdClient = codecCli
 		re.Nil(err)
 		opt = tikv.WithCodec(codecCli.GetCodec())
